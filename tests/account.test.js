@@ -17,7 +17,7 @@ describe('Account API', () => {
         account: {
           agency: '0001',
           number: '12345-6',
-          balance: 9000.00,
+          balance: 10000.00,
           dailyPixLimit: 1000.00,
           favoritePixLimit: 5000.00,
           isFavorite: false
@@ -43,7 +43,7 @@ describe('Account API', () => {
         account: {
           agency: '0001',
           number: '34567-8',
-          balance: 2000.00,
+          balance: 10000.00,
           dailyPixLimit: 1000.00,
           favoritePixLimit: 5000.00,
           isFavorite: true

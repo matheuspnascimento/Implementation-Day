@@ -2,7 +2,7 @@
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const moment = require('moment');
-const { users, transactions, idempotencyKeys } = require('../../src/data/inMemoryDatabase');
+const db = require('../../src/data/inMemoryDatabase');
 const { MESSAGES } = require('../utils/constants');
 
 function generateIdempotencyKey({ senderAccountId, receiverCpf, amount }) {
@@ -13,21 +13,29 @@ function generateIdempotencyKey({ senderAccountId, receiverCpf, amount }) {
 const processPixTransfer = (req, res, next) => {
   let { senderAccountId, receiverCpf, amount, idempotencyKey } = req.body;
 
-  // Se o cliente não enviar, gera baseada no conteúdo
+  // Sempre pegue as referências atualizadas
+  const users = db.users;
+  const transactions = db.transactions;
+  const idempotencyKeys = db.idempotencyKeys;
+
+  // Buscar a chave de idempotência do header ou do body
+  idempotencyKey = req.header('X-Idempotency-Key') || idempotencyKey;
   if (!idempotencyKey) {
     idempotencyKey = generateIdempotencyKey({ senderAccountId, receiverCpf, amount });
   }
 
   // Validação da chave de idempotência
-  if (idempotencyKeys.has(idempotencyKey)) {
-    const existingTransaction = idempotencyKeys.get(idempotencyKey);
+  if (db.idempotencyKeys.has(idempotencyKey)) {
+    const existingTransaction = db.idempotencyKeys.get(idempotencyKey);
     if (
       existingTransaction.amount === amount &&
       existingTransaction.receiverCpf === receiverCpf &&
       existingTransaction.senderAccountId === senderAccountId
     ) {
+      // Retorna a transação já existente, sem criar nova
       return res.status(409).json({ error: { message: MESSAGES.DUPLICATE_TRANSACTION, code: 'DUPLICATE_TRANSACTION' }, idempotencyKey });
     } else {
+      // Não altera saldo, não cria transação
       return res.status(400).json({ error: { message: 'Chave de idempotência reutilizada com payload diferente.', code: 'IDEMPOTENCY_KEY_REUSED' }, idempotencyKey });
     }
   }
@@ -44,15 +52,15 @@ const processPixTransfer = (req, res, next) => {
   if (amount <= 0) {
     return res.status(400).json({ error: { message: MESSAGES.INVALID_AMOUNT, code: 'INVALID_AMOUNT' }, idempotencyKey });
   }
-  const senderUser = users.find(u => u.id === senderAccountId);
-  const receiverUser = users.find(u => u.cpf === receiverCpf);
+  const senderUser = db.users.find(u => u.id === senderAccountId);
+  const receiverUser = db.users.find(u => u.cpf === receiverCpf);
   if (!senderUser) {
     return res.status(404).json({ error: { message: MESSAGES.ACCOUNT_NOT_FOUND, code: 'ACCOUNT_NOT_FOUND' }, idempotencyKey });
   }
 
   // Validação de limites diários
   const today = moment().startOf('day');
-  const todayTransactions = transactions.filter(
+  const todayTransactions = db.transactions.filter(
     t => t.senderAccountId === senderAccountId && moment(t.timestamp).isSame(today, 'day')
   );
   const dailyTransferredAmount = todayTransactions.reduce((sum, t) => sum + t.amount, 0);
@@ -90,14 +98,18 @@ const processPixTransfer = (req, res, next) => {
     receiverUser.account.balance += amount;
   }
 
-  transactions.push(newTransaction);
-  idempotencyKeys.set(idempotencyKey, newTransaction);
+  db.transactions.push(newTransaction);
+  db.idempotencyKeys.set(idempotencyKey, newTransaction);
 
   res.status(200).json({ message: 'Transferência Pix realizada com sucesso.', transaction: newTransaction, idempotencyKey });
 };
 
 const processPixRefund = (req, res) => {
   const { transactionId, accountId } = req.body;
+
+  const senderUser = db.users.find(u => u.id === accountId);
+  const transactions = db.transactions;
+  const idempotencyKeys = db.idempotencyKeys;
 
   const transactionToRefund = transactions.find(t => t.id === transactionId && t.senderAccountId === accountId);
 
@@ -110,8 +122,7 @@ const processPixRefund = (req, res) => {
     return res.status(400).json({ error: { message: MESSAGES.REFUND_EXPIRED, code: 'REFUND_EXPIRED' } });
   }
 
-  const senderUser = users.find(u => u.id === transactionToRefund.senderAccountId);
-  const receiverUser = users.find(u => u.cpf === transactionToRefund.receiverCpf);
+  const receiverUser = db.users.find(u => u.cpf === transactionToRefund.receiverCpf);
 
   // Estorna o valor
   senderUser.account.balance += transactionToRefund.amount;

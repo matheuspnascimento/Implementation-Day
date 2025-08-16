@@ -1,74 +1,30 @@
 
 const request = require('supertest');
 const app = require('../app');
-const { users, transactions, idempotencyKeys, initializeDatabase } = require('../src/data/inMemoryDatabase');
 const { v4: uuidv4 } = require('uuid');
 const moment = require('moment');
+
+const getDb = () => require('../src/data/inMemoryDatabase');
 
 describe('Pix API', () => {
   let initialUsersData;
 
   beforeEach(() => {
     console.log('=== ANTES DO TESTE ===');
-    console.log('Transações antes de limpar:', transactions.length);
-    console.log('Chaves de idempotência antes de limpar:', idempotencyKeys.size);
-    console.log('Saldo de Bob antes de limpar:', users.find(u => u.id === '2').account.balance);
+    console.log('Transações antes de limpar:', getDb().transactions.length);
+    console.log('Chaves de idempotência antes de limpar:', getDb().idempotencyKeys.size);
+    console.log('Saldo de Bob antes de limpar:', getDb().users.find(u => u.id === '2').account.balance);
     
-    initializeDatabase(); // Limpa transações e chaves de idempotência
+    getDb().initializeDatabase(); // Limpa transações e chaves de idempotência
     
     console.log('=== APÓS LIMPEZA ===');
-    console.log('Transações após limpar:', transactions.length);
-    console.log('Chaves de idempotência após limpar:', idempotencyKeys.size);
-    console.log('Saldo de Bob após limpar:', users.find(u => u.id === '2').account.balance);
-
-    // Os dados iniciais para 'users' são definidos aqui para garantir consistência
-    initialUsersData = JSON.parse(JSON.stringify([
-      {
-        id: '1',
-        name: 'Alice',
-        cpf: '111.111.111-11',
-        account: {
-          agency: '0001',
-          number: '12345-6',
-          balance: 10000.00,
-          dailyPixLimit: 1000.00,
-          favoritePixLimit: 5000.00,
-          isFavorite: false
-        }
-      },
-      {
-        id: '2',
-        name: 'Bob',
-        cpf: '222.222.222-22',
-        account: {
-          agency: '0001',
-          number: '78901-2',
-          balance: 500.00,
-          dailyPixLimit: 1000.00,
-          favoritePixLimit: 5000.00,
-          isFavorite: false
-        }
-      },
-      {
-        id: '3',
-        name: 'Charlie',
-        cpf: '333.333.333-33',
-        account: {
-          agency: '0001',
-          number: '34567-8',
-          balance: 10000.00, // Aumentado de 2000 para 10000
-          dailyPixLimit: 1000.00,
-          favoritePixLimit: 5000.00,
-          isFavorite: true
-        }
-      }
-    ]));
-    // Limpa o array users e adiciona os dados iniciais
-    users.length = 0;
-    initialUsersData.forEach(user => users.push(user));
+    console.log('Transações após limpar:', getDb().transactions.length);
+    console.log('Chaves de idempotência após limpar:', getDb().idempotencyKeys.size);
+    console.log('Saldo de Bob após limpar:', getDb().users.find(u => u.id === '2').account.balance);
     
+    // Removido o reset manual do array users
     console.log('=== APÓS RESTAURAR USUÁRIOS ===');
-    console.log('Saldo de Bob após restaurar:', users.find(u => u.id === '2').account.balance);
+    console.log('Saldo de Bob após restaurar:', getDb().users.find(u => u.id === '2').account.balance);
   });
 
   describe('POST /api/pix/transfer', () => {
@@ -90,10 +46,10 @@ describe('Pix API', () => {
       expect(res.statusCode).toEqual(200);
       expect(res.body.message).toEqual('Transferência Pix realizada com sucesso.');
       expect(res.body.transaction).toHaveProperty('id');
-      expect(users.find(u => u.id === senderAccountId).account.balance).toEqual(9900.00);
-      expect(users.find(u => u.cpf === receiverCpf).account.balance).toEqual(600.00);
-      expect(transactions.length).toEqual(1);
-      expect(idempotencyKeys.has(idempotencyKey)).toBe(true);
+      expect(getDb().users.find(u => u.id === senderAccountId).account.balance).toEqual(9900.00);
+      expect(getDb().users.find(u => u.cpf === receiverCpf).account.balance).toEqual(600.00);
+      expect(getDb().transactions.length).toEqual(1);
+      expect(getDb().idempotencyKeys.has(idempotencyKey)).toBe(true);
     });
 
     test('Deve retornar 400 se o saldo for insuficiente', async () => {
@@ -113,7 +69,7 @@ describe('Pix API', () => {
 
       expect(res.statusCode).toEqual(400);
       expect(res.body.error.message).toEqual('Saldo insuficiente para a transferência.');
-      expect(transactions.length).toEqual(0);
+      expect(getDb().transactions.length).toEqual(0);
     });
 
     test('Deve retornar 400 se o valor for inválido (menor ou igual a zero)', async () => {
@@ -199,7 +155,7 @@ describe('Pix API', () => {
 
       expect(res.statusCode).toEqual(409);
       expect(res.body.error.message).toEqual('Essa transação já foi realizada.');
-      expect(transactions.length).toEqual(1); // Apenas uma transação deve ser registrada
+      expect(getDb().transactions.length).toEqual(1); // Apenas uma transação deve ser registrada
     });
 
     test('Não deve permitir reuso de hash com payload diferente', async () => {
@@ -230,7 +186,7 @@ describe('Pix API', () => {
 
       expect(res.statusCode).toEqual(400);
       expect(res.body.error.message).toEqual('Chave de idempotência reutilizada com payload diferente.');
-      expect(transactions.length).toEqual(1);
+      expect(getDb().transactions.length).toEqual(1);
     });
 
     test('Deve aplicar o limite diário de R$1000 para usuário comum', async () => {
@@ -261,7 +217,7 @@ describe('Pix API', () => {
 
       expect(res.statusCode).toEqual(400);
       expect(res.body.error.message).toEqual('Limite diário de PIX excedido para sua conta.');
-      expect(users.find(u => u.id === senderAccountId).account.balance).toEqual(9000.00);
+      expect(getDb().users.find(u => u.id === senderAccountId).account.balance).toEqual(9000.00);
     });
 
     test('Deve permitir transferência dentro do limite diário de R$1000 para usuário comum', async () => {
@@ -292,7 +248,7 @@ describe('Pix API', () => {
 
       expect(res.statusCode).toEqual(200);
       expect(res.body.message).toEqual('Transferência Pix realizada com sucesso.');
-      expect(users.find(u => u.id === senderAccountId).account.balance).toEqual(9000.00);
+      expect(getDb().users.find(u => u.id === senderAccountId).account.balance).toEqual(9000.00);
     });
 
     test('Deve aplicar o limite diário de R$5000 para usuário favorito', async () => {
@@ -323,7 +279,7 @@ describe('Pix API', () => {
 
       expect(res.statusCode).toEqual(400);
       expect(res.body.error.message).toEqual('Limite diário de PIX excedido para usuários favoritos.');
-      expect(users.find(u => u.id === senderAccountId).account.balance).toEqual(5000.00); // 10000 - 5000 = 5000
+      expect(getDb().users.find(u => u.id === senderAccountId).account.balance).toEqual(5000.00); // 10000 - 5000 = 5000
     });
 
     test('Deve simular timeout em caso de perda de conexão', async () => {
@@ -366,8 +322,8 @@ describe('Pix API', () => {
 
       const transactionId = transferRes.body.transaction.id;
 
-      const initialSenderBalance = users.find(u => u.id === senderAccountId).account.balance;
-      const initialReceiverBalance = users.find(u => u.cpf === receiverCpf).account.balance;
+      const initialSenderBalance = getDb().users.find(u => u.id === senderAccountId).account.balance;
+      const initialReceiverBalance = getDb().users.find(u => u.cpf === receiverCpf).account.balance;
 
       // Realiza o estorno
       const refundRes = await request(app)
@@ -379,10 +335,10 @@ describe('Pix API', () => {
 
       expect(refundRes.statusCode).toEqual(200);
       expect(refundRes.body.message).toEqual('Estorno de Pix realizado com sucesso.');
-      expect(users.find(u => u.id === senderAccountId).account.balance).toEqual(initialSenderBalance + amount);
-      expect(users.find(u => u.cpf === receiverCpf).account.balance).toEqual(initialReceiverBalance - amount);
-      expect(transactions.length).toEqual(0); // A transação deve ser removida após o estorno
-      expect(idempotencyKeys.has(idempotencyKey)).toBe(false);
+      expect(getDb().users.find(u => u.id === senderAccountId).account.balance).toEqual(initialSenderBalance + amount);
+      expect(getDb().users.find(u => u.cpf === receiverCpf).account.balance).toEqual(initialReceiverBalance - amount);
+      expect(getDb().transactions.length).toEqual(0); // A transação deve ser removida após o estorno
+      expect(getDb().idempotencyKeys.has(idempotencyKey)).toBe(false);
     });
 
     test('Deve retornar 404 se a transação para estorno não for encontrada', async () => {
@@ -419,7 +375,7 @@ describe('Pix API', () => {
       const transactionId = transferRes.body.transaction.id;
 
       // Simula o passar do tempo (mais de 1 minuto)
-      const transaction = transactions.find(t => t.id === transactionId);
+      const transaction = getDb().transactions.find(t => t.id === transactionId);
       if (transaction) {
         transaction.timestamp = moment().subtract(2, 'minutes').toDate();
       }
