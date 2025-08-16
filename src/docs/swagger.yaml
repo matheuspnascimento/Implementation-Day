@@ -1,0 +1,240 @@
+
+openapi: 3.0.0
+info:
+  title: Miau Bank API
+  version: 1.0.0
+  description: API para o aplicativo de banco Miau Bank, incluindo funcionalidades de PIX, extrato e saldo.
+servers:
+  - url: http://localhost:3000/api
+    description: Servidor de desenvolvimento local
+tags:
+  - name: Contas
+    description: Operações relacionadas a contas bancárias
+  - name: Pix
+    description: Operações de transferência e estorno via Pix
+paths:
+  /accounts/{accountId}/balance:
+    get:
+      summary: Retorna o saldo da conta.
+      tags: [Contas]
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          description: ID da conta.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Saldo da conta retornado com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  balance:
+                    type: number
+                    format: float
+                    description: Saldo atual da conta.
+        '404':
+          description: Conta não encontrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /accounts/{accountId}/statement:
+    get:
+      summary: Retorna o extrato da conta.
+      tags: [Contas]
+      parameters:
+        - in: path
+          name: accountId
+          required: true
+          description: ID da conta.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Extrato da conta retornado com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statement:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        type:
+                          type: string
+                        amount:
+                          type: number
+                        senderAccountId:
+                          type: string
+                        receiverCpf:
+                          type: string
+                        timestamp:
+                          type: string
+                          format: date-time
+        '404':
+          description: Conta não encontrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pix/transfer:
+    post:
+      summary: Realiza uma transferência Pix.
+      tags: [Pix]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - senderAccountId
+                - receiverCpf
+                - amount
+              properties:
+                senderAccountId:
+                  type: string
+                  description: ID da conta de origem.
+                receiverCpf:
+                  type: string
+                  description: CPF do destinatário do Pix.
+                amount:
+                  type: number
+                  format: float
+                  description: Valor da transferência.
+      responses:
+        '200':
+          description: Transferência Pix realizada com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  transaction:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      idempotencyKey:
+                        type: string
+                      type:
+                        type: string
+                      senderAccountId:
+                        type: string
+                      receiverCpf:
+                        type: string
+                      amount:
+                        type: number
+                      timestamp:
+                        type: string
+                        format: date-time
+                  idempotencyKey:
+                    type: string
+                    description: Chave de idempotência gerada pela API para esta transação.
+        '400':
+          description: Requisição inválida (saldo insuficiente, limite excedido, valor inválido).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Conta de origem não encontrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Transação duplicada (chave de idempotência já utilizada).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '504':
+          description: Timeout (simulado para teste de perda de conexão).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pix/refund:
+    post:
+      summary: Realiza o estorno de uma transferência Pix.
+      tags: [Pix]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - transactionId
+                - accountId
+              properties:
+                transactionId:
+                  type: string
+                  description: ID da transação a ser estornada.
+                accountId:
+                  type: string
+                  description: ID da conta que solicitou o estorno (o remetente original).
+      responses:
+        '200':
+          description: Estorno de Pix realizado com sucesso.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  refundedTransaction:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      idempotencyKey:
+                        type: string
+                      type:
+                        type: string
+                      senderAccountId:
+                        type: string
+                      receiverCpf:
+                        type: string
+                      amount:
+                        type: number
+                      timestamp:
+                        type: string
+                        format: date-time
+        '400':
+          description: Estorno não permitido (prazo excedido).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Transação não encontrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            message:
+              type: string
+            code:
+              type: string
+
