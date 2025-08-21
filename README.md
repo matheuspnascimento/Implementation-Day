@@ -232,4 +232,4 @@ O projeto inclui um pipeline automatizado configurado com GitHub Actions:
 
 ---
 
-*Última atualização: Dezembro 2024*
+*Última atualização: Agosto 2025*
